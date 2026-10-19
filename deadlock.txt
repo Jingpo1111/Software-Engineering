@@ -1,0 +1,8 @@
+Found one Java-level deadlock:
+=============================
+"transfer-3":
+  waiting to lock monitor 0x... (object 0x..., a edu.itc.se.lab01.task5.Bank$Account),
+  which is held by "transfer-6"
+"transfer-6":
+  waiting to lock monitor 0x... (object 0x..., a edu.itc.se.lab01.task5.Bank$Account),
+  which is held by "transfer-3"
