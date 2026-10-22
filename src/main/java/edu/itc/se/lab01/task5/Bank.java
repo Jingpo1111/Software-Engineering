@@ -4,17 +4,14 @@ import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadInfo;
 import java.lang.management.ThreadMXBean;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.ReentrantLock;
 
 public class Bank {
     static final int ACCOUNTS = 4, THREADS = 8, PER_THREAD = 100_000;
-    static final AtomicLong retries = new AtomicLong();
 
     static final class Account {
         final int id; private long balance;
-        final ReentrantLock lock = new ReentrantLock();   // used by tryLock version
+        final java.util.concurrent.locks.ReentrantLock lock = new java.util.concurrent.locks.ReentrantLock();
         Account(int id, long balance) { this.id = id; this.balance = balance; }
         long balance() { return balance; }
         void withdraw(long a) { balance -= a; }
@@ -30,29 +27,6 @@ public class Bank {
     // BUG: lock order depends on argument order -> circular wait
     static void brokenTransfer(Account from, Account to, long amount) {
         synchronized (from) { synchronized (to) { move(from, to, amount); } }
-    }
-
-    // Fix A: always lock the lower id first
-    static void orderedTransfer(Account from, Account to, long amount) {
-        Account first = from.id < to.id ? from : to;
-        Account second = from.id < to.id ? to : from;
-        synchronized (first) { synchronized (second) { move(from, to, amount); } }
-    }
-
-    // Fix B: tryLock on both; on failure release, back off randomly, retry
-    static void tryLockTransfer(Account from, Account to, long amount) throws InterruptedException {
-        while (true) {
-            if (from.lock.tryLock(10, TimeUnit.MILLISECONDS)) {
-                try {
-                    if (to.lock.tryLock(10, TimeUnit.MILLISECONDS)) {
-                        try { move(from, to, amount); return; }
-                        finally { to.lock.unlock(); }
-                    }
-                } finally { from.lock.unlock(); }
-            }
-            retries.incrementAndGet();
-            Thread.sleep(ThreadLocalRandom.current().nextInt(1, 5));
-        }
     }
 
     static Account[] newAccounts() {
@@ -88,7 +62,7 @@ public class Bank {
 
     static void runAll(String label, Transfer tr, boolean showRetries) throws InterruptedException {
         long t0 = System.nanoTime();
-        retries.set(0);
+        TryLockBank.retries.set(0);
         Account[] acc = newAccounts();
         AtomicLong done = new AtomicLong();
         Thread[] ws = new Thread[THREADS];
@@ -108,7 +82,7 @@ public class Bank {
         for (Thread t : ws) t.join();
         long ms = (System.nanoTime() - t0) / 1_000_000;
         System.out.printf("# %s%ntransfers=%d %stotal=%d (expected %d) in %d ms%n", label, done.get(),
-                showRetries ? "retries=" + retries.get() + " " : "", total(acc), ACCOUNTS * 1_000L, ms);
+                showRetries ? "retries=" + TryLockBank.retries.get() + " " : "", total(acc), ACCOUNTS * 1_000L, ms);
     }
 
     // Step 6: graceful shutdown
@@ -123,7 +97,7 @@ public class Bank {
                 try {
                     while (!Thread.currentThread().isInterrupted()) {
                         Account a = acc[rnd.nextInt(ACCOUNTS)], b = acc[rnd.nextInt(ACCOUNTS)];
-                        if (a != b) { tryLockTransfer(a, b, rnd.nextInt(1, 50)); done[id]++; }
+                        if (a != b) { TryLockBank.transfer(a, b, rnd.nextInt(1, 50)); done[id]++; }
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();            // restore the flag
@@ -149,12 +123,12 @@ public class Bank {
         startWatchdog();
         switch (mode) {
             case "broken"   -> runAll("BrokenBank (will hang, press Ctrl+C)", Bank::brokenTransfer, false);
-            case "ordered"  -> runAll("OrderedBank", Bank::orderedTransfer, false);
-            case "trylock"  -> runAll("TryLockBank", Bank::tryLockTransfer, true);
+            case "ordered"  -> runAll("OrderedBank", OrderedBank::transfer, false);
+            case "trylock"  -> runAll("TryLockBank", TryLockBank::transfer, true);
             case "shutdown" -> shutdownDemo();
             default -> {
-                runAll("OrderedBank", Bank::orderedTransfer, false);
-                runAll("TryLockBank", Bank::tryLockTransfer, true);
+                runAll("OrderedBank", OrderedBank::transfer, false);
+                runAll("TryLockBank", TryLockBank::transfer, true);
                 shutdownDemo();
             }
         }

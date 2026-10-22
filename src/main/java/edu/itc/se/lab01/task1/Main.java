@@ -11,12 +11,11 @@ public class Main {
 
         Thread[] threads = {apollo, gemini, mercury, artemis};
 
-        
         for (Thread t : threads) {
             if (sequential) {
-                t.run();
+                t.run();      // runs on the main thread, one after another
             } else {
-                t.start();
+                t.start();    // runs concurrently
             }
         }
 
@@ -29,43 +28,8 @@ public class Main {
         System.out.println("Mission control: all landed");
 
         for (Thread t : threads) {
-            System.out.printf("%-8s virtual=%-5b state=%s%n", 
+            System.out.printf("%-8s virtual=%-5b state=%s%n",
                     t.getName(), t.isVirtual(), t.getState());
-        }
-    }
-}
-
-class Countdown extends Thread {
-    public Countdown(String name) {
-        super(name);
-    }
-
-    @Override
-    public void run() {
-        try {
-            for (int i = 3; i >= 1; i--) {
-                System.out.println(getName() + ": " + i);
-                Thread.sleep(200);
-            }
-            System.out.println(getName() + ": liftoff!");
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
-}
-
-class CountdownTask implements Runnable {
-    @Override
-    public void run() {
-        String name = Thread.currentThread().getName();
-        try {
-            for (int i = 3; i >= 1; i--) {
-                System.out.println(name + ": " + i);
-                Thread.sleep(200);
-            }
-            System.out.println(name + ": liftoff!");
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
         }
     }
 }
